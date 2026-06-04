@@ -82,5 +82,5 @@ def test_my_favorite_flow():
 ```
 
 ### Prefect testing behavior
-- `prefect_test_harness` is used in `test_pipeline.py` to run Prefect in an isolated local backend environment.
+- `prefect_test_harness` is used to run Prefect in an isolated local backend environment.
 - The tests are designed to verify the flow output and the task logic directly.
