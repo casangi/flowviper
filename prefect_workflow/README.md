@@ -9,7 +9,7 @@ Install flowviper first. See the [main README](../README.md#installation) for pl
 The bundled cube imaging demo uses synthetic MSv4 data and works with the base install:
 
 ```bash
-pip install flowviper prefect
+pip install flowviper
 ```
 
 Workflows that read legacy CASA MeasurementSets (`.ms` files) require the macOS MSv2 backend described in the [main README](../README.md#macos--msv2-support).
