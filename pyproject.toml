@@ -28,6 +28,13 @@ interactive = [
 Documentation = "https://github.com/casangi/flowviper"
 Installation = "https://github.com/casangi/flowviper#installation"
 
+[tool.setuptools]
+packages = ["flowviper", "flowviper.prefect_workflow"]
+
+[tool.setuptools.package-dir]
+"flowviper" = "."
+"flowviper.prefect_workflow" = "prefect_workflow"
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
