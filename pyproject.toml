@@ -1,0 +1,37 @@
+[project]
+name = "flowviper"
+version = "0.0.1"
+description = "Prefect workflow examples for radio astronomy data processing with astroviper"
+authors = [
+    { name = "Jan-Willem Steeb", email = "jsteeb@nrao.edu" },
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">= 3.11, < 3.14"
+
+dependencies = [
+    "astroviper[all]>=0.0.34",
+    "prefect>=3.6",
+]
+
+[project.optional-dependencies]
+interactive = [
+    "jupyterlab",
+    "ipykernel",
+    "ipython",
+]
+
+[project.urls]
+Documentation = "https://github.com/casangi/flowviper"
+Installation = "https://github.com/casangi/flowviper#installation"
+
+[tool.setuptools]
+packages = ["flowviper", "flowviper.prefect_workflow"]
+
+[tool.setuptools.package-dir]
+"flowviper" = "."
+"flowviper.prefect_workflow" = "prefect_workflow"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
