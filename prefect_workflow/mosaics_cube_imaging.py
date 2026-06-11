@@ -178,7 +178,7 @@ def create_imaging_summary_artifact(image_name: str) -> None:
     img_xds = xr.open_zarr(image_name)
     summary = f"""
     Image store: `{image_name}`
-    Dimensions: {dict(img_xds.dims)}
+    Dimensions: {dict(img_xds.sizes)}
     Data variables: {list(img_xds.data_vars)}
     """
     create_markdown_artifact(
@@ -266,6 +266,9 @@ def mosaics_cube_imaging_flow(
     image_name: str = DEFAULT_IMAGE_NAME,
     scan_intents: list[str] | None = None,
     ms_key: str | None = None,
+    image_size: tuple[int, int] = (500, 500),
+    cell_arcsec: float = 0.13,
+    polarization_coords: list[str] | None = None,
     create_plots: bool = False,
     plot_frequency_index: int = 82,
     plot_polarization_index: int = 0,
@@ -278,7 +281,12 @@ def mosaics_cube_imaging_flow(
 
     download_data(ps_store)
     metadata = inspect_processing_set(ps_store, scan_intents, ms_key=ms_key)
-    imaging_config = configure_image_params(metadata)
+    imaging_config = configure_image_params(
+        metadata,
+        image_size=image_size,
+        cell_arcsec=cell_arcsec,
+        polarization_coords=polarization_coords,
+    )
     prepare_image_store(image_name)
     run_cube_imaging(
         ps_store,
