@@ -12,7 +12,10 @@ Requires Python >= 3.11, < 3.14.
 pip install flowviper
 ```
 
-This is sufficient for the bundled Prefect demo (synthetic MSv4 data) and workflows that start from MSv4 or zarr data already converted. It does **not** include reading legacy CASA MeasurementSets (`.ms` files).
+This is sufficient for the bundled Prefect demo (downloads a small real MSv4
+processing set via toolviper) and workflows that start from MSv4 or zarr data
+already converted. It does **not** include reading legacy CASA MeasurementSets
+(`.ms` files).
 
 ### macOS — MSv2 support
 
