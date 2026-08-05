@@ -22,6 +22,12 @@ Workflows that read legacy CASA MeasurementSets (`.ms` files) require the macOS 
 python cube_imaging_example.py
 ```
 
-Pass `interactive=True` (or call `imaging_flow(interactive=True)`) to pause for
-Prefect UI overrides of CLEAN iteration controls. The default CLI path is
-headless.
+Headless by default. To pause for Prefect UI overrides of CLEAN iteration
+controls:
+
+```bash
+python cube_imaging_example.py --interactive
+```
+
+Then open the flow run in the Prefect UI and click Resume (form is pre-filled
+with the current CLEAN controls). Or call `imaging_flow(interactive=True)`.

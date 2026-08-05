@@ -130,9 +130,13 @@ def configure_imaging(
     return params
 
 
-@flow(log_prints=True)
 def modify_imaging_params(params: dict[str, Any]) -> dict[str, Any]:
-    """Pause for Prefect UI input to override CLEAN iteration controls.
+    """Pause the *calling* flow for Prefect UI CLEAN-control overrides.
+
+    Must be a plain function (not a ``@flow`` / ``@task``) so
+    ``pause_flow_run`` pauses the parent ``imaging_flow`` run. A nested
+    ``@flow`` would only pause the subflow — the parent stays ``Running``
+    and the UI Resume form never appears on ``imaging_flow``.
 
     Only intended for the initial setting before running the imaging loop —
     not an interactive clean.
@@ -297,15 +301,22 @@ def imaging_flow(interactive: bool = False, image_name: str = DEFAULT_IMAGE_NAME
     Parameters
     ----------
     interactive : bool, optional
-        If ``True``, pause for Prefect UI input to override CLEAN controls.
-        Defaults to ``False`` so ``python cube_imaging_example.py`` runs
-        headlessly.
+        If ``True``, pause this flow run for Prefect UI input to override
+        CLEAN controls (Resume form appears on ``imaging_flow``). Defaults
+        to ``False`` so ``python cube_imaging_example.py`` runs headlessly.
+        Pass ``--interactive`` on the CLI, or call
+        ``imaging_flow(interactive=True)``.
     image_name : str, optional
         Basename for on-disk outputs (``.img.zarr`` and ``_imaging_results.pkl``).
     """
+    print(f"imaging_flow starting (interactive={interactive}, image_name={image_name})")
     ps_xdt, phase_center, frequency_coords = data_prep()
     params = configure_imaging(phase_center, frequency_coords, image_name=image_name)
     if interactive:
+        print(
+            "interactive=True: pausing for Prefect UI input "
+            "(open this flow run and click Resume)"
+        )
         params = modify_imaging_params(params)
 
     img_xds, timing_df, deconvolve_dict = run_imaging_loop_task(ps_xdt, params)
@@ -316,4 +327,18 @@ def imaging_flow(interactive: bool = False, image_name: str = DEFAULT_IMAGE_NAME
 
 
 if __name__ == "__main__":
-    imaging_flow(interactive=False)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Cube imaging Prefect demo")
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Pause for Prefect UI overrides of CLEAN iteration controls",
+    )
+    parser.add_argument(
+        "--image-name",
+        default=DEFAULT_IMAGE_NAME,
+        help=f"Output basename (default: {DEFAULT_IMAGE_NAME})",
+    )
+    args = parser.parse_args()
+    imaging_flow(interactive=args.interactive, image_name=args.image_name)
