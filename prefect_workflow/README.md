@@ -17,17 +17,19 @@ pip install flowviper
 Workflows that read legacy CASA MeasurementSets (`.ms` files) require the macOS MSv2 backend described in the [main README](../README.md#macos--msv2-support).
 
 ## Example: cube imaging
-
+Run with python in a non-interactive way, headless by default. 
 ```bash
 python cube_imaging_example.py
 ```
 
-Headless by default. To pause for Prefect UI overrides of CLEAN iteration
-controls:
+To pause for Prefect UI overrides of CLEAN iteration controls:
 
 ```bash
-python cube_imaging_example.py --interactive
+# In terminal 1, start server and open the UI using the given URL in a browser
+prefect server start
+
+# In terminal 2, point the client at the server, then run:
+prefect config set PREFECT_API_URL=http://127.0.0.1:4200/api
+python prefect_workflow/cube_imaging_example.py --interactive
 ```
 
-Then open the flow run in the Prefect UI and click Resume (form is pre-filled
-with the current CLEAN controls). Or call `imaging_flow(interactive=True)`.
