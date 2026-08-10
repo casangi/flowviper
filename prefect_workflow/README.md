@@ -33,3 +33,4 @@ prefect config set PREFECT_API_URL=http://127.0.0.1:4200/api
 python prefect_workflow/cube_imaging_example.py --interactive
 ```
 
+Open the browser on the URL showing in the log of the run
