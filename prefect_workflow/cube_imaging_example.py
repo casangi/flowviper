@@ -130,13 +130,17 @@ def configure_imaging(
     return params
 
 
+@task(log_prints=True)
 def modify_imaging_params(params: dict[str, Any]) -> dict[str, Any]:
     """Pause the *calling* flow for Prefect UI CLEAN-control overrides.
 
-    Must be a plain function (not a ``@flow`` / ``@task``) so
-    ``pause_flow_run`` pauses the parent ``imaging_flow`` run. A nested
-    ``@flow`` would only pause the subflow — the parent stays ``Running``
-    and the UI Resume form never appears on ``imaging_flow``.
+    Safe to run as a ``@task``: since Prefect 3.6.3 (see
+    https://github.com/PrefectHQ/prefect/pull/19457), ``pause_flow_run``
+    always targets the enclosing flow run's context, even when called from
+    within a task — unlike a nested ``@flow``, which would only pause the
+    subflow and leave the parent ``imaging_flow`` run ``Running`` (no UI
+    Resume form). Decorating this as a task also makes it appear as its own
+    node in the Prefect UI graph.
 
     Only intended for the initial setting before running the imaging loop —
     not an interactive clean.

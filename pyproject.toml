@@ -11,7 +11,7 @@ requires-python = ">= 3.11, < 3.14"
 
 dependencies = [
     "astroviper[all]>=0.0.37",
-    "prefect>=3.6",
+    "prefect>=3.8.2",
 ]
 
 [project.optional-dependencies]
