@@ -86,6 +86,13 @@ def configure_imaging(
     phase_center: np.ndarray,
     frequency_coords: np.ndarray,
     image_name: str = DEFAULT_IMAGE_NAME,
+    gain: float = 0.1,
+    niter: int = 300,
+    threshold: float = 0.001,
+    nmajor: int = 3,
+    cyclefactor: float = 1.5,
+    minpsffraction: float = 0.05,
+    maxpsffraction: float = 0.8,
 ) -> dict[str, Any]:
     """Build image / weights / iteration-control parameter dicts."""
     image_size = [200, 200]
@@ -107,15 +114,15 @@ def configure_imaging(
     }
     # Capped at 3 residual-update cycles for a fast demo.
     iteration_control_params = {
-        "niter": 300,
-        "nmajor": 3,
-        "threshold": 0.001,  # Jy
+        "niter": niter,
+        "nmajor": nmajor,
+        "threshold": threshold,  # Jy
         "primary_beam_limit": 0.2,
-        "gain": 0.1,
-        "cyclefactor": 1.5,
+        "gain": gain,
+        "cyclefactor": cyclefactor,
         "cycleniter": -1,
-        "minpsffraction": 0.05,
-        "maxpsffraction": 0.8,
+        "minpsffraction": minpsffraction,
+        "maxpsffraction": maxpsffraction,
     }
 
     params = {
@@ -299,7 +306,17 @@ def save_results(img_xds: xr.Dataset, deconvolve_dict, image_name: str):
 
 
 @flow(log_prints=True)
-def imaging_flow(interactive: bool = False, image_name: str = DEFAULT_IMAGE_NAME):
+def imaging_flow(
+    interactive: bool = False,
+    image_name: str = DEFAULT_IMAGE_NAME,
+    gain: float = 0.1,
+    niter: int = 300,
+    threshold: float = 0.001,
+    nmajor: int = 3,
+    cyclefactor: float = 1.5,
+    minpsffraction: float = 0.05,
+    maxpsffraction: float = 0.8,
+):
     """Cube imaging Prefect workflow.
 
     Parameters
@@ -312,10 +329,25 @@ def imaging_flow(interactive: bool = False, image_name: str = DEFAULT_IMAGE_NAME
         ``imaging_flow(interactive=True)``.
     image_name : str, optional
         Basename for on-disk outputs (``.img.zarr`` and ``_imaging_results.pkl``).
+    gain, niter, threshold, nmajor, cyclefactor, minpsffraction, maxpsffraction
+        CLEAN iteration controls (same fields as ``ImagingParamsInput``).
+        Used when ``interactive=False``; with ``interactive=True`` the Prefect UI
+        may still override them after pause.
     """
     print(f"imaging_flow starting (interactive={interactive}, image_name={image_name})")
     ps_xdt, phase_center, frequency_coords = data_prep()
-    params = configure_imaging(phase_center, frequency_coords, image_name=image_name)
+    params = configure_imaging(
+        phase_center,
+        frequency_coords,
+        image_name=image_name,
+        gain=gain,
+        niter=niter,
+        threshold=threshold,
+        nmajor=nmajor,
+        cyclefactor=cyclefactor,
+        minpsffraction=minpsffraction,
+        maxpsffraction=maxpsffraction,
+    )
     if interactive:
         print(
             "interactive=True: pausing for Prefect UI input "
