@@ -6,10 +6,13 @@ import shutil
 from io import BytesIO
 import base64
 from typing import Literal
+from typing import Any
 import numpy as np
 
 from prefect import flow, task
 from prefect.artifacts import create_image_artifact, create_markdown_artifact
+from prefect.flow_runs import pause_flow_run
+from prefect.input import RunInput
 
 DEFAULT_PS_STORE = "twhya_selfcal_5chans_lsrk_compare_weights.ps.zarr"
 DEFAULT_IMAGE_NAME = "twhya_selfcal_5chans_lsrk_compare_weights.img.zarr"
@@ -19,6 +22,17 @@ DEFAULT_IMAGE_DATA_VARIABLES_KEEP = [
     "point_spread_function",
     "primary_beam",
 ]
+
+
+# User-specifiable CLEAN controls (Prefect UI pause input).
+class ImagingParamsInput(RunInput):
+    gain: float
+    niter: int
+    threshold: float
+    nmajor: int
+    cyclefactor: float
+    minpsffraction: float
+    maxpsffraction: float
 
 
 @task(log_prints=True)
@@ -99,11 +113,11 @@ def configure_imaging_params(
     # image parameters
     phase_direction: np.ndarray,
     frequency_coords: np.ndarray,
-    image_size: tuple[int, int] = (500, 500),
+    image_size: tuple[int, int] = (250, 250),
     cell_arcsec: float = 0.13,
     polarization_coords: list[str] | None = None,
     # weighting params
-    weighting: str = "natural",
+    weighting: str = "briggs",
     robust: float = 0.5,
     # Gridding params
     support: int = 7,
@@ -168,6 +182,45 @@ def configure_imaging_params(
 
 
 @task(log_prints=True)
+def modify_imaging_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Pause the *calling* flow for Prefect UI CLEAN-control overrides.
+
+    Safe to run as a ``@task``: since Prefect 3.6.3 (see
+    https://github.com/PrefectHQ/prefect/pull/19457), ``pause_flow_run``
+    always targets the enclosing flow run's context, even when called from
+    within a task — unlike a nested ``@flow``, which would only pause the
+    subflow and leave the parent ``imaging_flow`` run ``Running`` (no UI
+    Resume form). Decorating this as a task also makes it appear as its own
+    node in the Prefect UI graph.
+
+    Only intended for the initial setting before running the imaging loop —
+    not an interactive clean.
+    """
+    ic = params["iteration_control_params"]
+    user_input: ImagingParamsInput = pause_flow_run(
+        wait_for_input=ImagingParamsInput.with_initial_data(
+            gain=ic["gain"],
+            niter=ic["niter"],
+            threshold=ic["threshold"],
+            nmajor=ic["nmajor"],
+            cyclefactor=ic["cyclefactor"],
+            minpsffraction=ic["minpsffraction"],
+            maxpsffraction=ic["maxpsffraction"],
+        )
+    )
+    print("Applying user overrides to iteration_control_params")
+    ic["gain"] = user_input.gain
+    ic["niter"] = user_input.niter
+    ic["threshold"] = user_input.threshold
+    ic["nmajor"] = user_input.nmajor
+    ic["cyclefactor"] = user_input.cyclefactor
+    ic["minpsffraction"] = user_input.minpsffraction
+    ic["maxpsffraction"] = user_input.maxpsffraction
+    print(f"Modified iteration_control_params: {ic}")
+    return params
+
+
+@task(log_prints=True)
 def run_cube_imaging(
     ps_store: str,
     image_name: str,
@@ -182,7 +235,7 @@ def run_cube_imaging(
 
     viper_client = local_client(cores=dask_cores, memory_limit=dask_memory_limit)
 
-    return_dict_clean = image_cube_single_field(
+    clean_dict = image_cube_single_field(
         ps_store=ps_store,
         image_store=image_name,
         image_params=imaging_config["image_params"],
@@ -196,26 +249,26 @@ def run_cube_imaging(
     )
     viper_client.close()
     print(f"Cube imaging completed: {image_name}")
-    return return_dict_clean
+    return clean_dict
 
 
 @task
-def create_imaging_summary_artifact(image_name: str) -> None:
-    """Publish a short markdown summary of the produced image store to Prefect."""
-    import xarray as xr
+def create_imaging_summary_artifact(imaging_ret_dict: dict) -> None:
+    """Publish a short markdown summary of the imaging result to Prefect."""
+    from astroviper.processing_functions.imaging.utils import format_deconvolve_dict
 
-    img_xds = xr.open_zarr(image_name)
-    summary = f"""
-    Image store: `{image_name}`
-    Dimensions: {dict(img_xds.sizes)}
-    Data variables: {list(img_xds.data_vars)}
-    """
+    deconvolve_summary = f"""
+```
+{format_deconvolve_dict(imaging_ret_dict["deconvolution"], float_format="{:.6g}")}
+```
+"""
+
     create_markdown_artifact(
-        key="mosaics-cube-imaging-report",
-        markdown=summary,
-        description="Summary of mosaics cube imaging output",
+        key="single-field-cube-imaging-report",
+        markdown=deconvolve_summary,
+        description="Summary of single field cube imaging output",
     )
-    print(f"Created imaging summary artifact: {summary}")
+    print(f"Created imaging summary artifact: {deconvolve_summary}")
 
 
 @task(log_prints=True)
@@ -271,7 +324,7 @@ def plot_image_products(
     b64_encoded_image = base64.b64encode(buf.read()).decode()
 
     create_image_artifact(
-        key="mosaics-cube-imaging-summary",
+        key="single-field-cube-imaging-summary",
         image_url=f"data:image/png;base64,{b64_encoded_image}",
         description=(
             "PSF, primary beam, and sky residual "
@@ -282,6 +335,7 @@ def plot_image_products(
 
 @flow(log_prints=True)
 def single_field_cube_imaging_flow(
+    interactive: bool = False,
     ps_store: str = DEFAULT_PS_STORE,
     image_name: str = DEFAULT_IMAGE_NAME,
     scan_intents: list[str] | None = None,
@@ -308,7 +362,15 @@ def single_field_cube_imaging_flow(
         cell_arcsec=cell_arcsec,
         polarization_coords=polarization_coords,
     )
-    run_cube_imaging(
+
+    if interactive:
+        print(
+            "interactive=True: pausing for Prefect UI input "
+            "(open this flow run and click Resume)"
+        )
+        imaging_config = modify_imaging_params(imaging_config)
+
+    returned_clean_dict = run_cube_imaging(
         ps_store,
         image_name,
         scan_intents,
@@ -324,7 +386,7 @@ def single_field_cube_imaging_flow(
         "polarization_coords": polarization_coords,
     }
     save_results(image_name, imaging_config, metadata)
-    create_imaging_summary_artifact(image_name)
+    create_imaging_summary_artifact(returned_clean_dict)
 
     if create_plots:
         plot_image_products(
@@ -335,4 +397,19 @@ def single_field_cube_imaging_flow(
 
 
 if __name__ == "__main__":
-    single_field_cube_imaging_flow(polarization_coords=["I", "Q"], create_plots=True)
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Single Field Cube imaging Prefect demo"
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Pause for Prefect UI overrides of CLEAN iteration controls",
+    )
+    args = parser.parse_args()
+    single_field_cube_imaging_flow(
+        interactive=args.interactive,
+        polarization_coords=["I", "Q"],
+        create_plots=True,
+    )
