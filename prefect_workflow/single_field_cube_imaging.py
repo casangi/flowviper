@@ -1,3 +1,6 @@
+# An example Prefect workflow for single field cube imaging based on AstroVIPER's
+# single field cube tutorial. The workflow make use of distributed applications layer
+# of AstroVIPER to run the imaging in a distributed manner using Dask as local client.
 import os
 import shutil
 from io import BytesIO
@@ -19,9 +22,13 @@ DEFAULT_IMAGE_DATA_VARIABLES_KEEP = [
 
 
 @task(log_prints=True)
-def download_data(ps_store: str = DEFAULT_PS_STORE, ps_store_id: str = None, location : Literal['Cloudflare', 'GoogleDrive'] = 'Cloudflare' ) -> str:
+def download_data(
+    ps_store: str = DEFAULT_PS_STORE,
+    ps_store_id: str = None,
+    location: Literal["Cloudflare", "GoogleDrive"] = "Cloudflare",
+) -> str:
     """Download tutorial processing-set data if not already present locally.
-    
+
     Parameters
     ----------
     ps_store: str
@@ -33,18 +40,22 @@ def download_data(ps_store: str = DEFAULT_PS_STORE, ps_store_id: str = None, loc
     """
 
     if os.path.exists(ps_store):
-        return # use existing store if already present
-    
-    if location == 'GoogleDrive':
+        return  # use existing store if already present
+
+    if location == "GoogleDrive":
         if ps_store_id is None:
-            raise ValueError("ps_store_id must be provided when using GoogleDrive location.")
+            raise ValueError(
+                "ps_store_id must be provided when using GoogleDrive location."
+            )
         import gdown
+
         zip_path = ps_store + ".zip"
         gdown.download(id=ps_store_id, output=zip_path, quiet=False)
-        shutil.unpack_archive(zip_path, extract_dir=os.path.dirname(ps_store))  
-        os.remove(zip_path)  # Clean up the zip file after extraction      
+        shutil.unpack_archive(zip_path, extract_dir=os.path.dirname(ps_store))
+        os.remove(zip_path)  # Clean up the zip file after extraction
     else:
         from toolviper.utils.data import download
+
         download(file=ps_store)
     print(f"Downloaded (or verified) processing set: {ps_store}")
     return ps_store
@@ -53,20 +64,16 @@ def download_data(ps_store: str = DEFAULT_PS_STORE, ps_store_id: str = None, loc
 @task(log_prints=True)
 def inspect_processing_set(
     ps_store: str,
-    scan_intents: list[str],
-    ms_key: str | None = None,
+    scan_intents: list[str] | None = None,
 ) -> dict:
     """Open the processing set, print a summary, and return metadata for imaging.
-    
+
     Parameters
     ----------
     ps_store: str
         The name of the processing set zarr store to load.
-    scan_intents: list[str]
-        The scan intents to filter the processing set by.
-    ms_key: str, optional
-        The key of the measurement set to use for imaging. If None, the first key is used. Defaults to None.    
-    """
+    scan_intents: list[str], optional
+        A list of scan intents to filter the processing set. Defaults to None."""
     from xradio.measurement_set import open_processing_set
     import pandas as pd
 
@@ -75,33 +82,23 @@ def inspect_processing_set(
     ps_xdt = open_processing_set(ps_store, scan_intents=scan_intents)
     ps_xdt.xr_ps.summary()
 
-    if ms_key is None:
-        ms_key = next(iter(ps_xdt.keys()))
-
-    print(ps_xdt[ms_key])
+    ms_name, ms_xdt = list(ps_xdt.items())[0]
 
     combined_field_and_source_xds = ps_xdt.xr_ps.get_combined_field_and_source_xds()
     center_field_name = combined_field_and_source_xds.attrs["center_field_name"]
     phase_direction = combined_field_and_source_xds.FIELD_PHASE_CENTER_DIRECTION.sel(
         field_name=center_field_name
     ).values
-    frequency_coord = ps_xdt[ms_key].frequency.values
+    frequency_coords = ps_xdt.xr_ps.get_freq_axis().values
 
-    metadata = {
-        "ps_store": ps_store,
-        "scan_intents": scan_intents,
-        "ms_key": ms_key,
-        "center_field_name": center_field_name,
-        "phase_direction": phase_direction,
-        "frequency_coords": frequency_coord,
-    }
-    print(f"Derived imaging metadata from MS key: {ms_key}")
-    return metadata
+    return ps_xdt, scan_intents, phase_direction, frequency_coords
 
 
 @task(log_prints=True)
 def configure_imaging_params(
-    metadata: dict,
+    # image parameters
+    phase_direction: np.ndarray,
+    frequency_coords: np.ndarray,
     image_size: tuple[int, int] = (500, 500),
     cell_arcsec: float = 0.13,
     polarization_coords: list[str] | None = None,
@@ -114,7 +111,7 @@ def configure_imaging_params(
     # Deconvolution params
     algorithm: str = "hogbom",
     gain: float = 0.1,
-    niter: int = 0,
+    niter: int = 100,
     threshold: float = 0.0,
     # major cycle control
     nmajor: int = -1,
@@ -122,22 +119,16 @@ def configure_imaging_params(
     cycleniter: int = -1,
     minpsffraction: float = 0.05,
     maxpsffraction: float = 0.8,
-    # spectral/polarization code
-    chan_mode: str = "cube",
-    corr_type: str = "linear",
 ) -> dict:
     """Build image_params and related imaging configuration from processing-set metadata."""
     # Convert cell size to radians
     cell_size = np.array([-cell_arcsec, cell_arcsec]) * np.pi / (180 * 3600)
 
-    if polarization_coords is None:
-        polarization_coords = ["I", "Q"]
-
     image_params = {
         "image_size": list(image_size),
         "cell_size": cell_size,
-        "phase_direction": metadata["phase_direction"],
-        "frequency_coords": metadata["frequency_coords"],
+        "phase_direction": phase_direction,
+        "frequency_coords": frequency_coords,
         "polarization_coords": polarization_coords,
         "time_coords": [0],
         "fft_padding": 1.0,
@@ -152,11 +143,12 @@ def configure_imaging_params(
         "niter": niter,
         "nmajor": nmajor,
         "threshold": threshold,
+        "primary_beam_limit": 0.2,
         "gain": gain,
         "cyclefactor": cyclefactor,
+        "cycleniter": cycleniter,
         "minpsffraction": minpsffraction,
         "maxpsffraction": maxpsffraction,
-        "cycleniter": cycleniter,
     }
 
     # Configure imaging parameters
@@ -167,25 +159,12 @@ def configure_imaging_params(
         # Deconvolution
         "algorithm": "hogbom",
         "iteration_control_params": iteration_control_params,
-        # Spectral/polarization mode
-        "chan_mode": "cube",
-        "corr_type": "linear",  # XX, YY -> Stokes I, Q
         "image_data_variables_keep": list(DEFAULT_IMAGE_DATA_VARIABLES_KEEP),
         "processing_set_data_group_name": "base",
-        #"n_chunks": None,
         "overwrite": True,
     }
     print(f"Configured imaging loop parameters:{params}")
     return params
-
-
-@task(log_prints=True)
-def prepare_image_store(image_name: str) -> str:
-    """Remove an existing image store so imaging can overwrite it cleanly."""
-    if os.path.exists(image_name):
-        shutil.rmtree(image_name)
-        print(f"Removed existing image store: {image_name}")
-    return image_name
 
 
 @task(log_prints=True)
@@ -201,10 +180,9 @@ def run_cube_imaging(
     from toolviper.dask.client import local_client
     from astroviper.distributed_applications.imaging import image_cube_single_field
 
+    viper_client = local_client(cores=dask_cores, memory_limit=dask_memory_limit)
 
-    local_client(cores=dask_cores, memory_limit=dask_memory_limit)
-
-    image_cube_single_field(
+    return_dict_clean = image_cube_single_field(
         ps_store=ps_store,
         image_store=image_name,
         image_params=imaging_config["image_params"],
@@ -213,22 +191,12 @@ def run_cube_imaging(
         scan_intents=scan_intents,
         image_data_variables_keep=imaging_config["image_data_variables_keep"],
         processing_set_data_group_name=imaging_config["processing_set_data_group_name"],
-        #n_chunks=imaging_config["n_chunks"],
+        # n_chunks=imaging_config["n_chunks"],
         overwrite=imaging_config["overwrite"],
     )
-
+    viper_client.close()
     print(f"Cube imaging completed: {image_name}")
-    return image_name
-
-
-@task(log_prints=True)
-def load_image_cube(image_name: str):
-    """Open the image zarr store and log its contents."""
-    import xarray as xr
-
-    img_xds = xr.open_zarr(image_name)
-    print(img_xds)
-    return image_name
+    return return_dict_clean
 
 
 @task
@@ -271,7 +239,7 @@ def save_results(image_name: str, imaging_config: dict, metadata: dict) -> str:
 @task(log_prints=True)
 def plot_image_products(
     image_name: str,
-    frequency_index: int = 82,
+    frequency_index: int = 2,
     polarization_index: int = 0,
 ) -> None:
     """
@@ -286,26 +254,16 @@ def plot_image_products(
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-    psf = img_xds.POINT_SPREAD_FUNCTION.isel(
-        polarization=polarization_index, frequency=frequency_index
-    )
-    psf.plot(ax=axes[0], cmap="viridis", vmin=0.0)
-    axes[0].set_title(f"Point Spread Function (chan {frequency_index})")
-
-    pb = img_xds.PRIMARY_BEAM.isel(
-        polarization=polarization_index, frequency=frequency_index
-    )
-    pb.plot(ax=axes[1])
-    axes[1].set_title(f"Primary Beam (chan {frequency_index})")
-
-    residual = img_xds.SKY_RESIDUAL.isel(
-        polarization=polarization_index, frequency=frequency_index
-    )
-    residual.plot(ax=axes[2], cmap="viridis", vmin=0.0)
-    axes[2].set_title(f"Sky Residual (chan {frequency_index})")
-
+    for ax, var in zip(
+        axes, ["POINT_SPREAD_FUNCTION", "PRIMARY_BEAM", "SKY_RESIDUAL"], strict=False
+    ):
+        plane = img_xds[var].isel(
+            time=0, frequency=frequency_index, polarization=polarization_index
+        )
+        im = ax.imshow(plane.values, origin="lower", cmap="viridis")
+        ax.set_title(f"{var}\nchannel {frequency_index}, Stokes I")
+        fig.colorbar(im, ax=ax)
     plt.tight_layout()
-
     buf = BytesIO()
     plt.savefig(buf, format="png")
     plt.close(fig)
@@ -327,29 +285,29 @@ def single_field_cube_imaging_flow(
     ps_store: str = DEFAULT_PS_STORE,
     image_name: str = DEFAULT_IMAGE_NAME,
     scan_intents: list[str] | None = None,
-    ms_key: str | None = None,
     image_size: tuple[int, int] = (500, 500),
     cell_arcsec: float = 0.13,
     polarization_coords: list[str] | None = None,
     create_plots: bool = False,
-    plot_frequency_index: int = 82,
+    plot_frequency_index: int = 2,
     plot_polarization_index: int = 0,
     dask_cores: int = 4,
     dask_memory_limit: str = "4GB",
 ):
-    """Mosaics tutorial cube imaging workflow with optional diagnostic plots."""
     if scan_intents is None:
         scan_intents = list(DEFAULT_SCAN_INTENTS)
 
     download_data(ps_store)
-    metadata = inspect_processing_set(ps_store, scan_intents, ms_key=ms_key)
+    ps_xdt, scan_intents, phase_direction, frequency_coords = inspect_processing_set(
+        ps_store, scan_intents
+    )
     imaging_config = configure_imaging_params(
-        metadata,
+        phase_direction=phase_direction,
+        frequency_coords=frequency_coords,
         image_size=image_size,
         cell_arcsec=cell_arcsec,
         polarization_coords=polarization_coords,
     )
-    prepare_image_store(image_name)
     run_cube_imaging(
         ps_store,
         image_name,
@@ -358,7 +316,13 @@ def single_field_cube_imaging_flow(
         dask_cores=dask_cores,
         dask_memory_limit=dask_memory_limit,
     )
-    load_image_cube(image_name)
+    metadata = {
+        "ps_store": ps_store,
+        "scan_intents": scan_intents,
+        "image_size": image_size,
+        "cell_arcsec": cell_arcsec,
+        "polarization_coords": polarization_coords,
+    }
     save_results(image_name, imaging_config, metadata)
     create_imaging_summary_artifact(image_name)
 
@@ -371,4 +335,4 @@ def single_field_cube_imaging_flow(
 
 
 if __name__ == "__main__":
-    single_field_cube_imaging_flow()
+    single_field_cube_imaging_flow(polarization_coords=["I", "Q"], create_plots=True)
