@@ -8,6 +8,7 @@ import base64
 from typing import Literal
 from typing import Any
 import numpy as np
+import matplotlib.pyplot as plt
 
 from prefect import flow, task
 from prefect.artifacts import create_image_artifact, create_markdown_artifact
@@ -272,6 +273,33 @@ def create_imaging_summary_artifact(imaging_ret_dict: dict) -> None:
 
 
 @task(log_prints=True)
+def create_imaging_timing_artifact(imaging_ret_dict: dict) -> None:
+    from astroviper.distributed_applications.imaging.image_cube_single_field import (
+        DISTRIBUTED_APPLICATION_TIMING_PHASES,
+        DISTRIBUTED_APPLICATION_TIMING_TOTAL_KEY,
+    )
+    from astroviper.utils.timing import format_timing_summary
+
+    timing_summary = f"""
+```
+{format_timing_summary(
+    imaging_ret_dict["timing_distributed_application"],
+    DISTRIBUTED_APPLICATION_TIMING_PHASES,
+    total_key=DISTRIBUTED_APPLICATION_TIMING_TOTAL_KEY,
+    title="AstroVIPER distributed-application timing (driver, seconds)",
+    total_label="TOTAL (driver wall time)",
+)}
+```
+"""
+
+    create_markdown_artifact(
+        key="single-field-cube-imaging-distributed-applications-timing",
+        markdown=timing_summary,
+        description="Summary of the distributed applications timing",
+    )
+
+
+@task(log_prints=True)
 def save_results(image_name: str, imaging_config: dict, metadata: dict) -> str:
     """Save imaging configuration and processing-set metadata alongside the image store."""
     import pickle
@@ -300,7 +328,7 @@ def plot_image_products(
 
     Creates a Prefect image artifact (base64-encoded PNG) for the UI.
     """
-    import matplotlib.pyplot as plt
+    # import matplotlib.pyplot as plt
     import xarray as xr
 
     img_xds = xr.open_zarr(image_name)
@@ -330,6 +358,69 @@ def plot_image_products(
             "PSF, primary beam, and sky residual "
             f"(pol={polarization_index}, freq={frequency_index})"
         ),
+    )
+
+
+def plot_image_statistics(imaging_ret_dict: dict) -> None:
+    """Plot per-plane image statistics for sky_residual, sky_model, and sky_restored."""
+    image_statistics = imaging_ret_dict["image_statistics"]
+    stat_panels = [
+        ("peak", "Signed peak"),
+        ("rms", "RMS"),
+        ("mad_sigma", "MAD sigma (robust noise)"),
+        ("mean", "Mean"),
+        ("median", "Median"),
+        ("sum", "Sum over pixels"),
+    ]
+    variables = [
+        v
+        for v in ("sky_residual", "sky_model", "sky_restored")
+        if v in image_statistics
+    ]
+    fig, axes = plt.subplots(
+        len(stat_panels),
+        len(variables),
+        figsize=(5 * len(variables), 2.6 * len(stat_panels)),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    for col, variable in enumerate(variables):
+        stats = image_statistics[variable].isel(time=0)
+        channel = np.arange(
+            stats.sizes["frequency"]
+        )  # frequency values: stats["frequency"]
+        for row, (stat, title) in enumerate(stat_panels):
+            ax = axes[row, col]
+            for i, pol in enumerate(stats["polarization"].values):
+                ax.plot(
+                    channel,
+                    stats[stat].sel(polarization=pol),
+                    "o-",
+                    color=f"C{i}",
+                    label=str(pol),
+                )
+                ax.plot(
+                    channel,
+                    stats[stat + "_masked"].sel(polarization=pol),
+                    "s--",
+                    color=f"C{i}",
+                    label=f"{pol} (masked)",
+                )
+            ax.set_title(f"{variable}: {title}", fontsize=10)
+            ax.set_ylabel("Jy/beam")
+            ax.grid(True, color="lightgray")
+        axes[-1, col].set_xlabel("Channel")
+    axes[0, 0].legend(fontsize=8)
+    buf = BytesIO()
+    plt.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    b64_encoded_image = base64.b64encode(buf.read()).decode("utf-8")
+
+    create_image_artifact(
+        key="single-field-cube-imaging-image-statistics",
+        image_url=f"data:image/png;base64,{b64_encoded_image}",
+        description="Per-plane image statistics for sky_residual, sky_model, and sky_restored.",
     )
 
 
@@ -387,6 +478,7 @@ def single_field_cube_imaging_flow(
     }
     save_results(image_name, imaging_config, metadata)
     create_imaging_summary_artifact(returned_clean_dict)
+    create_imaging_timing_artifact(returned_clean_dict)
 
     if create_plots:
         plot_image_products(
@@ -394,8 +486,11 @@ def single_field_cube_imaging_flow(
             frequency_index=plot_frequency_index,
             polarization_index=plot_polarization_index,
         )
+        plot_image_statistics(returned_clean_dict)
 
 
+# Run single_field_cube_imaging_flow with the default data defined in
+# DEFAULT_PS_STORE
 if __name__ == "__main__":
     import argparse
 
