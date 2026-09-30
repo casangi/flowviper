@@ -96,8 +96,6 @@ def inspect_processing_set(
     ps_xdt = open_processing_set(ps_store, scan_intents=scan_intents)
     ps_xdt.xr_ps.summary()
 
-    ms_name, ms_xdt = next(iter(ps_xdt.items()))
-
     combined_field_and_source_xds = ps_xdt.xr_ps.get_combined_field_and_source_xds()
     center_field_name = combined_field_and_source_xds.attrs["center_field_name"]
     phase_direction = combined_field_and_source_xds.FIELD_PHASE_CENTER_DIRECTION.sel(
@@ -444,7 +442,7 @@ def single_field_cube_imaging_flow(
         scan_intents = list(DEFAULT_SCAN_INTENTS)
 
     download_data(ps_store)
-    ps_xdt, scan_intents, phase_direction, frequency_coords = inspect_processing_set(
+    _, scan_intents, phase_direction, frequency_coords = inspect_processing_set(
         ps_store, scan_intents
     )
     imaging_config = configure_imaging_params(
