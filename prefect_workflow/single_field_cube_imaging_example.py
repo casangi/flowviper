@@ -19,8 +19,11 @@ DEFAULT_IMAGE_NAME = "twhya_selfcal_5chans_lsrk_compare_weights.img.zarr"
 DEFAULT_SCAN_INTENTS = ["OBSERVE_TARGET#ON_SOURCE"]
 DEFAULT_IMAGE_DATA_VARIABLES_KEEP = [
     "sky_residual",
+    "sky_model",
+    "mask",
     "point_spread_function",
     "primary_beam",
+    "beam_fit_params_point_spread_function",
 ]
 
 
@@ -52,9 +55,9 @@ def download_data(
     location: Literal['Cloudflare', 'GoogleDrive'], optional
         The data location from which to download the processing set. Defaults to 'Cloudflare'.
     """
-
+    print("location ij download_data=", location)
     if os.path.exists(ps_store):
-        return  # use existing store if already present
+        return ps_store  # use existing store if already present
 
     if location == "GoogleDrive":
         if ps_store_id is None:
@@ -67,10 +70,19 @@ def download_data(
         gdown.download(id=ps_store_id, output=zip_path, quiet=False)
         shutil.unpack_archive(zip_path, extract_dir=os.path.dirname(ps_store))
         os.remove(zip_path)  # Clean up the zip file after extraction
-    else:
+    elif location == "Cloudflare":
         from toolviper.utils.data import download
 
         download(file=ps_store)
+    else:
+        raise ValueError(
+            f"Unsupported data location {location!r}; "
+            "expected 'Cloudflare' or 'GoogleDrive'."
+        )
+    if not os.path.exists(ps_store):
+        raise FileNotFoundError(
+            f"Download completed but processing-set store was not found: {ps_store}"
+        )
     print(f"Downloaded (or verified) processing set: {ps_store}")
     return ps_store
 
@@ -361,7 +373,7 @@ def plot_image_products(
 
 
 def plot_image_statistics(imaging_ret_dict: dict) -> None:
-    """Plot per-plane image statistics for sky_residual, sky_model, and sky_restored."""
+    """Plot per-plane image statistics for sky_residual, and sky_model."""
     image_statistics = imaging_ret_dict["image_statistics"]
     stat_panels = [
         ("peak", "Signed peak"),
@@ -371,11 +383,7 @@ def plot_image_statistics(imaging_ret_dict: dict) -> None:
         ("median", "Median"),
         ("sum", "Sum over pixels"),
     ]
-    variables = [
-        v
-        for v in ("sky_residual", "sky_model", "sky_restored")
-        if v in image_statistics
-    ]
+    variables = [v for v in ("sky_residual", "sky_model") if v in image_statistics]
     fig, axes = plt.subplots(
         len(stat_panels),
         len(variables),
@@ -427,6 +435,8 @@ def plot_image_statistics(imaging_ret_dict: dict) -> None:
 def single_field_cube_imaging_flow(
     interactive: bool = False,
     ps_store: str = DEFAULT_PS_STORE,
+    ps_store_id: str | None = None,
+    location: Literal["Cloudflare", "GoogleDrive"] = "Cloudflare",
     image_name: str = DEFAULT_IMAGE_NAME,
     scan_intents: list[str] | None = None,
     image_size: tuple[int, int] = (500, 500),
@@ -440,8 +450,8 @@ def single_field_cube_imaging_flow(
 ):
     if scan_intents is None:
         scan_intents = list(DEFAULT_SCAN_INTENTS)
-
-    download_data(ps_store)
+    print("location inside flow=", location)
+    download_data(ps_store, ps_store_id, location)
     _, scan_intents, phase_direction, frequency_coords = inspect_processing_set(
         ps_store, scan_intents
     )
@@ -504,6 +514,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     single_field_cube_imaging_flow(
         interactive=args.interactive,
+        # Uncomment following lines to test data download via gdown
+        # (single_field_cube.ipynb tutorial data )
+        # ps_store="twhya_selfcal_lsrk_5chans.ps.zarr",
+        # ps_store_id="1BRe3cD6YAWkn-jSPbClGGM9VlbxHP_yn",
+        # image_name="twhya_clean.img.zarr",
+        # location="GoogleDrive",
         polarization_coords=["I", "Q"],
         create_plots=True,
     )
