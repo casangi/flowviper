@@ -1,15 +1,14 @@
 # An example Prefect workflow for single field cube imaging based on AstroVIPER's
 # single field cube tutorial. The workflow make use of distributed applications layer
 # of AstroVIPER to run the imaging in a distributed manner using Dask as local client.
+import base64
 import os
 import shutil
 from io import BytesIO
-import base64
-from typing import Literal
-from typing import Any
-import numpy as np
-import matplotlib.pyplot as plt
+from typing import Any, Literal
 
+import matplotlib.pyplot as plt
+import numpy as np
 from prefect import flow, task
 from prefect.artifacts import create_image_artifact, create_markdown_artifact
 from prefect.flow_runs import pause_flow_run
@@ -39,7 +38,7 @@ class ImagingParamsInput(RunInput):
 @task(log_prints=True)
 def download_data(
     ps_store: str = DEFAULT_PS_STORE,
-    ps_store_id: str = None,
+    ps_store_id: str | None = None,
     location: Literal["Cloudflare", "GoogleDrive"] = "Cloudflare",
 ) -> str:
     """Download tutorial processing-set data if not already present locally.
@@ -89,15 +88,15 @@ def inspect_processing_set(
         The name of the processing set zarr store to load.
     scan_intents: list[str], optional
         A list of scan intents to filter the processing set. Defaults to None."""
-    from xradio.measurement_set import open_processing_set
     import pandas as pd
+    from xradio.measurement_set import open_processing_set
 
     pd.options.display.max_colwidth = 100
 
     ps_xdt = open_processing_set(ps_store, scan_intents=scan_intents)
     ps_xdt.xr_ps.summary()
 
-    ms_name, ms_xdt = list(ps_xdt.items())[0]
+    ms_name, ms_xdt = next(iter(ps_xdt.items()))
 
     combined_field_and_source_xds = ps_xdt.xr_ps.get_combined_field_and_source_xds()
     center_field_name = combined_field_and_source_xds.attrs["center_field_name"]
@@ -231,8 +230,8 @@ def run_cube_imaging(
     dask_memory_limit: str = "4GB",
 ) -> str:
     """Run distributed-graph cube imaging for a single field."""
-    from toolviper.dask.client import local_client
     from astroviper.distributed_applications.imaging import image_cube_single_field
+    from toolviper.dask.client import local_client
 
     viper_client = local_client(cores=dask_cores, memory_limit=dask_memory_limit)
 
@@ -282,13 +281,15 @@ def create_imaging_timing_artifact(imaging_ret_dict: dict) -> None:
 
     timing_summary = f"""
 ```
-{format_timing_summary(
-    imaging_ret_dict["timing_distributed_application"],
-    DISTRIBUTED_APPLICATION_TIMING_PHASES,
-    total_key=DISTRIBUTED_APPLICATION_TIMING_TOTAL_KEY,
-    title="AstroVIPER distributed-application timing (driver, seconds)",
-    total_label="TOTAL (driver wall time)",
-)}
+{
+        format_timing_summary(
+            imaging_ret_dict["timing_distributed_application"],
+            DISTRIBUTED_APPLICATION_TIMING_PHASES,
+            total_key=DISTRIBUTED_APPLICATION_TIMING_TOTAL_KEY,
+            title="AstroVIPER distributed-application timing (driver, seconds)",
+            total_label="TOTAL (driver wall time)",
+        )
+    }
 ```
 """
 
