@@ -30,12 +30,12 @@ DEFAULT_IMAGE_DATA_VARIABLES_KEEP = [
 # User-specifiable CLEAN controls (Prefect UI pause input).
 class ImagingParamsInput(RunInput):
     gain: float
-    niter: int
+    max_iter: int
     threshold: float
-    nmajor: int
-    cyclefactor: float
-    minpsffraction: float
-    maxpsffraction: float
+    max_cycles: int
+    psf_sidelobe_factor: float
+    min_psf_fraction: float
+    max_psf_fraction: float
 
 
 @task(log_prints=True)
@@ -55,7 +55,6 @@ def download_data(
     location: Literal['Cloudflare', 'GoogleDrive'], optional
         The data location from which to download the processing set. Defaults to 'Cloudflare'.
     """
-    print("location ij download_data=", location)
     if os.path.exists(ps_store):
         return ps_store  # use existing store if already present
 
@@ -135,14 +134,14 @@ def configure_imaging_params(
     # Deconvolution params
     algorithm: str = "hogbom",
     gain: float = 0.1,
-    niter: int = 100,
+    max_iter: int = 100,
     threshold: float = 0.0,
     # major cycle control
-    nmajor: int = -1,
-    cyclefactor: float = 1.5,
-    cycleniter: int = -1,
-    minpsffraction: float = 0.05,
-    maxpsffraction: float = 0.8,
+    max_cycles: int = -1,
+    psf_sidelobe_factor: float = 1.5,
+    max_iter_per_cycle: int = -1,
+    min_psf_fraction: float = 0.05,
+    max_psf_fraction: float = 0.8,
 ) -> dict:
     """Build image_params and related imaging configuration from processing-set metadata."""
     # Convert cell size to radians
@@ -164,15 +163,15 @@ def configure_imaging_params(
     }
 
     iteration_control_params = {
-        "niter": niter,
-        "nmajor": nmajor,
+        "max_iter": max_iter,
+        "max_cycles": max_cycles,
         "threshold": threshold,
         "primary_beam_limit": 0.2,
         "gain": gain,
-        "cyclefactor": cyclefactor,
-        "cycleniter": cycleniter,
-        "minpsffraction": minpsffraction,
-        "maxpsffraction": maxpsffraction,
+        "psf_sidelobe_factor": psf_sidelobe_factor,
+        "max_iter_per_cycle": max_iter_per_cycle,
+        "min_psf_fraction": min_psf_fraction,
+        "max_psf_fraction": max_psf_fraction,
     }
 
     # Configure imaging parameters
@@ -210,22 +209,22 @@ def modify_imaging_params(params: dict[str, Any]) -> dict[str, Any]:
     user_input: ImagingParamsInput = pause_flow_run(
         wait_for_input=ImagingParamsInput.with_initial_data(
             gain=ic["gain"],
-            niter=ic["niter"],
+            max_iter=ic["max_iter"],
             threshold=ic["threshold"],
-            nmajor=ic["nmajor"],
-            cyclefactor=ic["cyclefactor"],
-            minpsffraction=ic["minpsffraction"],
-            maxpsffraction=ic["maxpsffraction"],
+            max_cycles=ic["max_cycles"],
+            psf_sidelobe_factor=ic["psf_sidelobe_factor"],
+            min_psf_fraction=ic["min_psf_fraction"],
+            max_psf_fraction=ic["max_psf_fraction"],
         )
     )
     print("Applying user overrides to iteration_control_params")
     ic["gain"] = user_input.gain
-    ic["niter"] = user_input.niter
+    ic["max_iter"] = user_input.max_iter
     ic["threshold"] = user_input.threshold
-    ic["nmajor"] = user_input.nmajor
-    ic["cyclefactor"] = user_input.cyclefactor
-    ic["minpsffraction"] = user_input.minpsffraction
-    ic["maxpsffraction"] = user_input.maxpsffraction
+    ic["max_cycles"] = user_input.max_cycles
+    ic["psf_sidelobe_factor"] = user_input.psf_sidelobe_factor
+    ic["min_psf_fraction"] = user_input.min_psf_fraction
+    ic["max_psf_fraction"] = user_input.max_psf_fraction
     print(f"Modified iteration_control_params: {ic}")
     return params
 
@@ -265,11 +264,16 @@ def run_cube_imaging(
 @task
 def create_imaging_summary_artifact(imaging_ret_dict: dict) -> None:
     """Publish a short markdown summary of the imaging result to Prefect."""
-    from astroviper.processing_functions.imaging.utils import format_deconvolve_dict
+    from astroviper.processing_functions.imaging.utils import format_imaging_dict
 
+    if "deconvolution" not in imaging_ret_dict:
+        print(
+            "No deconvolution results found in imaging_ret_dict; skipping summary artifact."
+        )
+        return
     deconvolve_summary = f"""
 ```
-{format_deconvolve_dict(imaging_ret_dict["deconvolution"], float_format="{:.6g}")}
+{format_imaging_dict(imaging_ret_dict["deconvolution"], float_format="{:.6g}")}
 ```
 """
 
@@ -450,7 +454,6 @@ def single_field_cube_imaging_flow(
 ):
     if scan_intents is None:
         scan_intents = list(DEFAULT_SCAN_INTENTS)
-    print("location inside flow=", location)
     download_data(ps_store, ps_store_id, location)
     _, scan_intents, phase_direction, frequency_coords = inspect_processing_set(
         ps_store, scan_intents
