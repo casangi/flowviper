@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">= 3.11, < 3.15"
 
 dependencies = [
-    "astroviper[all]>=0.0.37",
+    "astroviper[all]>=0.0.39",
     "prefect>=3.8.2",
 ]
 

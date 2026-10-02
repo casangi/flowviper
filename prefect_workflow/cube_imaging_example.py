@@ -15,7 +15,7 @@ import xarray as xr
 from astroviper.processing_functions.imaging.image_cube_single_field import (
     image_cube_single_field,
 )
-from astroviper.processing_functions.imaging.utils import format_deconvolve_dict
+from astroviper.processing_functions.imaging.utils import format_imaging_dict
 from prefect import flow, task
 from prefect.artifacts import create_image_artifact, create_markdown_artifact
 from prefect.flow_runs import pause_flow_run
@@ -239,7 +239,7 @@ def create_imaging_report(timing_df, deconvolve_dict):
 - Example plane stop reason ({first_key}): {stop_desc}
 
 ```
-{format_deconvolve_dict(deconvolve_dict)}
+{format_imaging_dict(deconvolve_dict)}
 ```
 """
     create_markdown_artifact(
