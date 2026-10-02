@@ -1,0 +1,18 @@
+# Lint and format check with ruff (configuration: [tool.ruff] in pyproject.toml).
+# Runs on every push and every pull request.
+name: Lint
+
+on: [push, pull_request]
+
+concurrency:
+  # A newer push to the same branch/PR cancels the older run. Each run on main
+  # gets its own group, so merges are never queued behind or cancelled by
+  # each other.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  call-ruff:
+    uses: nrao/gh-actions-templates-public/.github/workflows/ruff-template.yml@17-ci-python-312-314-push-pr-split
+    with:
+      ruff-version: "0.16.10"
