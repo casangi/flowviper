@@ -14,6 +14,7 @@ In practice, calling `math_flow(3, 4)` would return `7`.
 
 from prefect import flow, task
 
+
 @task
 def compute_data(x: int, y: int) -> int:
     """
@@ -27,6 +28,7 @@ def compute_data(x: int, y: int) -> int:
         The sum of x and y.
     """
     return x + y
+
 
 @flow
 def math_flow(x: int, y: int) -> int:

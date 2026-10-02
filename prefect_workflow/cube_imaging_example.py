@@ -12,6 +12,10 @@ from typing import Any
 
 import numpy as np
 import xarray as xr
+from astroviper.processing_functions.imaging.image_cube_single_field import (
+    image_cube_single_field,
+)
+from astroviper.processing_functions.imaging.utils import format_imaging_dict
 from prefect import flow, task
 from prefect.artifacts import create_image_artifact, create_markdown_artifact
 from prefect.flow_runs import pause_flow_run
@@ -19,11 +23,6 @@ from prefect.input import RunInput
 from toolviper.utils.data import download, update
 from xradio.image import make_empty_sky_image, write_image
 from xradio.measurement_set import load_processing_set, open_processing_set
-
-from astroviper.processing_functions.imaging.image_cube_single_field import (
-    image_cube_single_field,
-)
-from astroviper.processing_functions.imaging.utils import format_deconvolve_dict
 
 # Small real TW Hya ALMA cube (5 LSRK channels, XX/YY) — same dataset as the
 # processing-functions imaging-loop tutorial. Downloaded via toolviper.
@@ -240,7 +239,7 @@ def create_imaging_report(timing_df, deconvolve_dict):
 - Example plane stop reason ({first_key}): {stop_desc}
 
 ```
-{format_deconvolve_dict(deconvolve_dict)}
+{format_imaging_dict(deconvolve_dict)}
 ```
 """
     create_markdown_artifact(
