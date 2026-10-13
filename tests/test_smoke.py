@@ -41,20 +41,20 @@ def test_math_flow(prefect_harness):
 
 
 def test_configure_imaging_defaults():
-    from flowviper.prefect_workflow import cube_imaging_example
+    from flowviper.prefect_workflow import single_field_cube_imaging_example
 
-    params = cube_imaging_example.configure_imaging.fn(
+    params = single_field_cube_imaging_example.configure_imaging_params.fn(
         np.zeros(2), np.array([1.0e11, 1.1e11])
     )
-    assert params["iteration_control_params"]["niter"] == 300
+    assert params["iteration_control_params"]["max_iter"] == 100
 
-    run_input = cube_imaging_example.ImagingParamsInput(
+    run_input = single_field_cube_imaging_example.ImagingParamsInput(
         gain=0.1,
-        niter=1,
+        max_iter=1,
         threshold=0.0,
-        nmajor=1,
-        cyclefactor=1.0,
-        minpsffraction=0.1,
-        maxpsffraction=0.8,
+        max_cycles=1,
+        psf_sidelobe_factor=1.5,
+        min_psf_fraction=0.1,
+        max_psf_fraction=0.8,
     )
-    assert run_input.niter == 1
+    assert run_input.max_iter == 1

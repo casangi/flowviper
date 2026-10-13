@@ -19,7 +19,7 @@ Workflows that read legacy CASA MeasurementSets (`.ms` files) require the macOS 
 ## Example: cube imaging
 Run with python in a non-interactive way, headless by default. 
 ```bash
-python cube_imaging_example.py
+python single_field_cube_imaging_example.py
 ```
 
 To pause for Prefect UI overrides of CLEAN iteration controls:
@@ -30,7 +30,7 @@ prefect server start
 
 # In terminal 2, point the client at the server, then run:
 prefect config set PREFECT_API_URL=http://127.0.0.1:4200/api
-python prefect_workflow/cube_imaging_example.py --interactive
+python prefect_workflow/single_field_cube_imaging_example.py --interactive
 ```
 
 Open the browser on the URL showing in the log of the run. Parameters can be modified in the UI

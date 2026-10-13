@@ -52,5 +52,5 @@ Quick start:
 
 ```bash
 pip install flowviper
-python prefect_workflow/cube_imaging_example.py
+python prefect_workflow/single_field_cube_imaging_example.py
 ```
