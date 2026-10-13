@@ -2,15 +2,14 @@
 # It has been updated to work with the PR branch of astroviper 183-add-dask-parallelism-for-cube-single-field-imaging
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 from io import BytesIO
-import base64
 
 import numpy as np
 from prefect import flow, task
 from prefect.artifacts import create_image_artifact, create_markdown_artifact
-
 
 DEFAULT_PS_STORE = "Antennae_North.cal.lsrk.ps.zarr"
 DEFAULT_IMAGE_NAME = "Antennae_North_Cube.img.zarr"
@@ -39,8 +38,8 @@ def inspect_processing_set(
     ms_key: str | None = None,
 ) -> dict:
     """Open the processing set, print a summary, and return metadata for imaging."""
-    from xradio.measurement_set import open_processing_set
     import pandas as pd
+    from xradio.measurement_set import open_processing_set
 
     pd.options.display.max_colwidth = 100
 
@@ -136,8 +135,8 @@ def run_cube_imaging(
     dask_memory_limit: str = "4GB",
 ) -> str:
     """Run distributed-graph cube imaging for a single field."""
-    from toolviper.dask.client import local_client
     import astroviper.distributed_graphs as distributed_graphs
+    from toolviper.dask.client import local_client
 
     local_client(cores=dask_cores, memory_limit=dask_memory_limit)
 
@@ -149,9 +148,7 @@ def run_cube_imaging(
         iteration_control_params=imaging_config["iteration_control_params"],
         scan_intents=scan_intents,
         image_data_variables_keep=imaging_config["image_data_variables_keep"],
-        processing_set_data_group_name=imaging_config[
-            "processing_set_data_group_name"
-        ],
+        processing_set_data_group_name=imaging_config["processing_set_data_group_name"],
         n_chunks=imaging_config["n_chunks"],
         overwrite=imaging_config["overwrite"],
     )
@@ -187,6 +184,7 @@ def create_imaging_summary_artifact(image_name: str) -> None:
         description="Summary of mosaics cube imaging output",
     )
     print(f"Created imaging summary artifact: {summary}")
+
 
 @task(log_prints=True)
 def save_results(image_name: str, imaging_config: dict, metadata: dict) -> str:
