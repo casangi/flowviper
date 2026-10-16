@@ -1,0 +1,35 @@
+# Run the Linux tests using the shared template.
+# Push to a branch: Python 3.13 only. Pull request / push to main: 3.12-3.14.
+name: Linux Tests
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - '**.rst'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - '**.rst'
+
+concurrency:
+  # A newer push to the same branch/PR cancels the older run. Each run on main
+  # gets its own group, so merges are never queued behind or cancelled by
+  # each other.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  call-testing-linux:
+    uses: nrao/gh-actions-templates-public/.github/workflows/python-testing-linux-template.yml@main
+    with:
+      cov_project: "flowviper"
+      test-path: "tests/"
+      # Pull requests and pushes to main: 3.12-3.14; other branch pushes: 3.13.
+      python-versions: '["3.12", "3.13", "3.14"]'
+      push-python-versions: '["3.13"]'
+      # astroviper has no cp314 wheel on PyPI yet, so on 3.14 pip builds it
+      # from the sdist, and its C++23 extensions need GCC >= 14.
+      gcc-version: "14"
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

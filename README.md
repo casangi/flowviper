@@ -2,7 +2,7 @@
 
 Workflow examples for radio astronomy data processing with [astroviper](https://github.com/casangi/astroviper).
 
-Requires Python >= 3.11, < 3.14.
+Requires Python >= 3.11, < 3.15 (tested on 3.12, 3.13 and 3.14).
 
 ## Installation
 
