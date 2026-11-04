@@ -14,7 +14,7 @@ via toolviper and runs AstroVIPER's science-layer
 pip install flowviper
 ```
 
-Workflows that read legacy CASA MeasurementSets (`.ms` files) require the macOS MSv2 backend described in the [main README](../README.md#macos--msv2-support).
+Workflows that read legacy CASA MeasurementSets (`.ms` files) use XRADIO 1.3.0 onwards that reads MSv2 data with arcae, which astroviper[all] installs on Linux and macOS.
 
 ## Example: cube imaging
 Run with python in a non-interactive way, headless by default.
