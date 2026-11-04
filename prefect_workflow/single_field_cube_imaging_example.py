@@ -180,7 +180,7 @@ def configure_imaging_params(
         "image_params": image_params,
         "imaging_weights_params": imaging_weights_params,
         # Deconvolution
-        "algorithm": "hogbom",
+        "algorithm": algorithm,
         "iteration_control_params": iteration_control_params,
         "image_data_variables_keep": list(DEFAULT_IMAGE_DATA_VARIABLES_KEEP),
         "processing_set_data_group_name": "base",
@@ -237,26 +237,35 @@ def run_cube_imaging(
     imaging_config: dict,
     dask_cores: int = 4,
     dask_memory_limit: str = "4GB",
-) -> str:
+) -> dict:
     """Run distributed-graph cube imaging for a single field."""
     from astroviper.distributed_applications.imaging import image_cube_single_field
     from toolviper.dask.client import local_client
 
     viper_client = local_client(cores=dask_cores, memory_limit=dask_memory_limit)
 
-    clean_dict = image_cube_single_field(
-        ps_store=ps_store,
-        image_store=image_name,
-        image_params=imaging_config["image_params"],
-        imaging_weights_params=imaging_config["imaging_weights_params"],
-        iteration_control_params=imaging_config["iteration_control_params"],
-        scan_intents=scan_intents,
-        image_data_variables_keep=imaging_config["image_data_variables_keep"],
-        processing_set_data_group_name=imaging_config["processing_set_data_group_name"],
-        # n_chunks=imaging_config["n_chunks"],
-        overwrite=imaging_config["overwrite"],
-    )
-    viper_client.close()
+    try:
+        clean_dict = image_cube_single_field(
+            ps_store=ps_store,
+            image_store=image_name,
+            image_params=imaging_config["image_params"],
+            imaging_weights_params=imaging_config["imaging_weights_params"],
+            iteration_control_params=imaging_config["iteration_control_params"],
+            scan_intents=scan_intents,
+            image_data_variables_keep=imaging_config["image_data_variables_keep"],
+            processing_set_data_group_name=imaging_config[
+                "processing_set_data_group_name"
+            ],
+            # n_chunks=imaging_config["n_chunks"],
+            overwrite=imaging_config["overwrite"],
+        )
+    finally:
+        # toolviper wraps an already-started LocalCluster, so Client.close()
+        # does not shut it down (_start_arg is the cluster, not None).
+        cluster = getattr(viper_client, "cluster", None)
+        if cluster is not None:
+            cluster.close()
+        viper_client.close()
     print(f"Cube imaging completed: {image_name}")
     return clean_dict
 
@@ -446,12 +455,26 @@ def single_field_cube_imaging_flow(
     image_size: tuple[int, int] = (500, 500),
     cell_arcsec: float = 0.13,
     polarization_coords: list[str] | None = None,
+    # weighting params
+    weighting: str = "briggs",
+    robust: float = 0.5,
+    # Deconvolution params
+    algorithm: str = "hogbom",
+    gain: float = 0.1,
+    max_iter: int = 100,
+    threshold: float = 0.0,
+    # major cycle control
+    max_cycles: int = -1,
+    psf_sidelobe_factor: float = 1.5,
+    max_iter_per_cycle: int = -1,
+    min_psf_fraction: float = 0.05,
+    max_psf_fraction: float = 0.8,
     create_plots: bool = False,
     plot_frequency_index: int = 2,
     plot_polarization_index: int = 0,
     dask_cores: int = 4,
     dask_memory_limit: str = "4GB",
-):
+) -> dict:
     if scan_intents is None:
         scan_intents = list(DEFAULT_SCAN_INTENTS)
     download_data(ps_store, ps_store_id, location)
@@ -464,6 +487,17 @@ def single_field_cube_imaging_flow(
         image_size=image_size,
         cell_arcsec=cell_arcsec,
         polarization_coords=polarization_coords,
+        weighting=weighting,
+        robust=robust,
+        algorithm=algorithm,
+        gain=gain,
+        max_iter=max_iter,
+        threshold=threshold,
+        max_cycles=max_cycles,
+        psf_sidelobe_factor=psf_sidelobe_factor,
+        max_iter_per_cycle=max_iter_per_cycle,
+        min_psf_fraction=min_psf_fraction,
+        max_psf_fraction=max_psf_fraction,
     )
 
     if interactive:
@@ -487,6 +521,9 @@ def single_field_cube_imaging_flow(
         "image_size": image_size,
         "cell_arcsec": cell_arcsec,
         "polarization_coords": polarization_coords,
+        "weighting": weighting,
+        "robust": robust,
+        "algorithm": algorithm,
     }
     save_results(image_name, imaging_config, metadata)
     create_imaging_summary_artifact(returned_clean_dict)
@@ -499,6 +536,8 @@ def single_field_cube_imaging_flow(
             polarization_index=plot_polarization_index,
         )
         plot_image_statistics(returned_clean_dict)
+
+    return returned_clean_dict
 
 
 # Run single_field_cube_imaging_flow with the default data defined in
