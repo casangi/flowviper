@@ -97,18 +97,18 @@ def configure_image_params(
         "image_params": image_params,
         "imaging_weights_params": {"weighting": "natural"},
         "iteration_control_params": {
-            "niter": 0,
-            "nmajor": 0,
+            "max_iter": 0,
+            "max_cycles": 0,
             "threshold": 0.0,
             "gain": 0.1,
-            "cyclefactor": 1.5,
-            "cycleniter": 1,
-            "minpsffraction": 0.05,
-            "maxpsffraction": 0.8,
+            "psf_sidelobe_factor": 1.5,
+            "max_iter_per_cycle": 1,
+            "min_psf_fraction": 0.05,
+            "max_psf_fraction": 0.8,
         },
         "image_data_variables_keep": list(DEFAULT_IMAGE_DATA_VARIABLES_KEEP),
         "processing_set_data_group_name": "base",
-        "n_chunks": None,
+        "n_mapping_parallelism": None,
         "overwrite": True,
     }
 
@@ -135,12 +135,12 @@ def run_cube_imaging(
     dask_memory_limit: str = "4GB",
 ) -> str:
     """Run distributed-graph cube imaging for a single field."""
-    import astroviper.distributed_graphs as distributed_graphs
+    from astroviper.distributed_applications.imaging import image_cube_single_field
     from toolviper.dask.client import local_client
 
     local_client(cores=dask_cores, memory_limit=dask_memory_limit)
 
-    distributed_graphs.imaging.image_cube_single_field(
+    image_cube_single_field(
         ps_store=ps_store,
         image_store=image_name,
         image_params=imaging_config["image_params"],
@@ -149,7 +149,7 @@ def run_cube_imaging(
         scan_intents=scan_intents,
         image_data_variables_keep=imaging_config["image_data_variables_keep"],
         processing_set_data_group_name=imaging_config["processing_set_data_group_name"],
-        n_chunks=imaging_config["n_chunks"],
+        n_mapping_parallelism=imaging_config["n_mapping_parallelism"],
         overwrite=imaging_config["overwrite"],
     )
 
