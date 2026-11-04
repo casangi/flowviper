@@ -17,7 +17,7 @@ pip install flowviper
 Workflows that read legacy CASA MeasurementSets (`.ms` files) require the macOS MSv2 backend described in the [main README](../README.md#macos--msv2-support).
 
 ## Example: cube imaging
-Run with python in a non-interactive way, headless by default. 
+Run with python in a non-interactive way, headless by default.
 ```bash
 python single_field_cube_imaging_example.py
 ```
@@ -34,6 +34,4 @@ python prefect_workflow/single_field_cube_imaging_example.py --interactive
 ```
 
 Open the browser on the URL showing in the log of the run. Parameters can be modified in the UI
-and reports are created in the Artifacts tab of the imaging-loop-report. 
-
-
+and reports are created in the Artifacts tab of the imaging-loop-report.
