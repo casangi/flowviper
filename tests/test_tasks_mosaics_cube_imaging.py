@@ -206,9 +206,8 @@ def test_save_results_writes_pickle(tmp_path, imaging_metadata):
         np.testing.assert_array_equal(saved_metadata[key], imaging_metadata[key])
 
     saved_config = results["imaging_config"]
-    assert saved_config["iteration_control_params"] == (
-        imaging_config["iteration_control_params"]
-    )
+    control_params = imaging_config["iteration_control_params"]
+    assert saved_config["iteration_control_params"] == control_params
     assert saved_config["n_mapping_parallelism"] is None
     saved_params = saved_config["image_params"]
     expected_params = imaging_config["image_params"]
