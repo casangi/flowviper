@@ -128,9 +128,6 @@ def configure_imaging_params(
     # weighting params
     weighting: str = "briggs",
     robust: float = 0.5,
-    # Gridding params
-    support: int = 7,
-    oversampling: int = 100,
     # Deconvolution params
     algorithm: str = "hogbom",
     gain: float = 0.1,
@@ -142,8 +139,36 @@ def configure_imaging_params(
     max_iter_per_cycle: int = -1,
     min_psf_fraction: float = 0.05,
     max_psf_fraction: float = 0.8,
+    primary_beam_limit: float = 0.2,
+    # Gridding and image settings
+    gridder: str = "anti_alias",
+    gridding_kernel_params: dict[str, Any] | None = None,
+    fft_padding: float = 1.2,
+    casa_weighting_implementation: bool = False,
+    image_data_variables_keep: list[str] | None = None,
+    # Run settings of image_cube_single_field (defaults are astroviper's)
+    single_precision_image: bool = True,
+    processing_function_threads: int = 1,
+    n_mapping_parallelism: int | None = None,
+    restore: bool = False,
+    fft_backend: str = "pyfftw",
+    write_visibility_model_to_ps: bool = False,
 ) -> dict:
-    """Build image_params and related imaging configuration from processing-set metadata."""
+    """Build image_params and related imaging configuration from processing-set metadata.
+
+    ``algorithm`` is passed to astroviper as ``deconvolver``. The CLEAN
+    controls go to astroviper's ``cycle_control_params``. ``gridder`` and
+    ``gridding_kernel_params`` default to astroviper's (``None`` is the
+    ``least_misfit`` kernel); that kernel needs ``fft_padding >= 1.05``, and
+    astroviper ships its table for the default ``fft_padding`` of 1.2.
+    ``primary_beam_limit`` is the clean mask cutoff (astroviper's cube
+    default is 0; the flow keeps 0.2).
+    ``n_mapping_parallelism`` is the number of frequency chunks; ``None`` lets
+    astroviper choose. ``image_data_variables_keep`` defaults to
+    ``DEFAULT_IMAGE_DATA_VARIABLES_KEEP``. The remaining run settings are
+    passed to ``image_cube_single_field`` unchanged, and their defaults are
+    the astroviper defaults.
+    """
     # Convert cell size to radians
     cell_size = np.array([-cell_arcsec, cell_arcsec]) * np.pi / (180 * 3600)
 
@@ -154,19 +179,20 @@ def configure_imaging_params(
         "frequency_coords": frequency_coords,
         "polarization_coords": polarization_coords,
         "time_coords": [0],
-        "fft_padding": 1.0,
+        "fft_padding": fft_padding,
     }
 
     imaging_weights_params = {
         "weighting": weighting,
         "robust": robust,
+        "casa_weighting_implementation": casa_weighting_implementation,
     }
 
-    iteration_control_params = {
+    cycle_control_params = {
         "max_iter": max_iter,
         "max_cycles": max_cycles,
         "threshold": threshold,
-        "primary_beam_limit": 0.2,
+        "primary_beam_limit": primary_beam_limit,
         "gain": gain,
         "psf_sidelobe_factor": psf_sidelobe_factor,
         "max_iter_per_cycle": max_iter_per_cycle,
@@ -179,12 +205,32 @@ def configure_imaging_params(
         # Image geometry - use the npix from generated data
         "image_params": image_params,
         "imaging_weights_params": imaging_weights_params,
+        # Gridding
+        "gridder": gridder,
+        "gridding_kernel_params": (
+            None if gridding_kernel_params is None else dict(gridding_kernel_params)
+        ),
         # Deconvolution
         "algorithm": algorithm,
-        "iteration_control_params": iteration_control_params,
-        "image_data_variables_keep": list(DEFAULT_IMAGE_DATA_VARIABLES_KEEP),
+        "cycle_control_params": cycle_control_params,
+        "image_data_variables_keep": list(
+            DEFAULT_IMAGE_DATA_VARIABLES_KEEP
+            if image_data_variables_keep is None
+            else image_data_variables_keep
+        ),
         "processing_set_data_group_name": "base",
         "overwrite": True,
+        # Run settings
+        "single_precision_image": single_precision_image,
+        "processing_function_threads": processing_function_threads,
+        "n_mapping_parallelism": (
+            None
+            if n_mapping_parallelism is None
+            else {"frequency": n_mapping_parallelism}
+        ),
+        "restore": restore,
+        "fft_backend": fft_backend,
+        "write_visibility_model_to_ps": write_visibility_model_to_ps,
     }
     print(f"Configured imaging loop parameters:{params}")
     return params
@@ -205,7 +251,7 @@ def modify_imaging_params(params: dict[str, Any]) -> dict[str, Any]:
     Only intended for the initial setting before running the imaging loop —
     not an interactive clean.
     """
-    ic = params["iteration_control_params"]
+    ic = params["cycle_control_params"]
     user_input: ImagingParamsInput = pause_flow_run(
         wait_for_input=ImagingParamsInput.with_initial_data(
             gain=ic["gain"],
@@ -217,7 +263,7 @@ def modify_imaging_params(params: dict[str, Any]) -> dict[str, Any]:
             max_psf_fraction=ic["max_psf_fraction"],
         )
     )
-    print("Applying user overrides to iteration_control_params")
+    print("Applying user overrides to cycle_control_params")
     ic["gain"] = user_input.gain
     ic["max_iter"] = user_input.max_iter
     ic["threshold"] = user_input.threshold
@@ -225,7 +271,7 @@ def modify_imaging_params(params: dict[str, Any]) -> dict[str, Any]:
     ic["psf_sidelobe_factor"] = user_input.psf_sidelobe_factor
     ic["min_psf_fraction"] = user_input.min_psf_fraction
     ic["max_psf_fraction"] = user_input.max_psf_fraction
-    print(f"Modified iteration_control_params: {ic}")
+    print(f"Modified cycle_control_params: {ic}")
     return params
 
 
@@ -250,14 +296,22 @@ def run_cube_imaging(
             image_store=image_name,
             image_params=imaging_config["image_params"],
             imaging_weights_params=imaging_config["imaging_weights_params"],
-            iteration_control_params=imaging_config["iteration_control_params"],
+            cycle_control_params=imaging_config["cycle_control_params"],
+            gridder=imaging_config["gridder"],
+            gridding_kernel_params=imaging_config["gridding_kernel_params"],
+            deconvolver=imaging_config["algorithm"],
             scan_intents=scan_intents,
             image_data_variables_keep=imaging_config["image_data_variables_keep"],
             processing_set_data_group_name=imaging_config[
                 "processing_set_data_group_name"
             ],
-            # n_chunks=imaging_config["n_chunks"],
+            single_precision_image=imaging_config["single_precision_image"],
+            processing_function_threads=imaging_config["processing_function_threads"],
+            n_mapping_parallelism=imaging_config["n_mapping_parallelism"],
             overwrite=imaging_config["overwrite"],
+            write_visibility_model_to_ps=imaging_config["write_visibility_model_to_ps"],
+            fft_backend=imaging_config["fft_backend"],
+            restore=imaging_config["restore"],
         )
     finally:
         # toolviper wraps an already-started LocalCluster, so Client.close()
@@ -469,6 +523,20 @@ def single_field_cube_imaging_flow(
     max_iter_per_cycle: int = -1,
     min_psf_fraction: float = 0.05,
     max_psf_fraction: float = 0.8,
+    primary_beam_limit: float = 0.2,
+    # Gridding and image settings
+    gridder: str = "anti_alias",
+    gridding_kernel_params: dict[str, Any] | None = None,
+    fft_padding: float = 1.2,
+    casa_weighting_implementation: bool = False,
+    image_data_variables_keep: list[str] | None = None,
+    # Run settings of image_cube_single_field (defaults are astroviper's)
+    single_precision_image: bool = True,
+    processing_function_threads: int = 1,
+    n_mapping_parallelism: int | None = None,
+    restore: bool = False,
+    fft_backend: str = "pyfftw",
+    write_visibility_model_to_ps: bool = False,
     create_plots: bool = False,
     plot_frequency_index: int = 2,
     plot_polarization_index: int = 0,
@@ -498,6 +566,18 @@ def single_field_cube_imaging_flow(
         max_iter_per_cycle=max_iter_per_cycle,
         min_psf_fraction=min_psf_fraction,
         max_psf_fraction=max_psf_fraction,
+        primary_beam_limit=primary_beam_limit,
+        gridder=gridder,
+        gridding_kernel_params=gridding_kernel_params,
+        fft_padding=fft_padding,
+        casa_weighting_implementation=casa_weighting_implementation,
+        image_data_variables_keep=image_data_variables_keep,
+        single_precision_image=single_precision_image,
+        processing_function_threads=processing_function_threads,
+        n_mapping_parallelism=n_mapping_parallelism,
+        restore=restore,
+        fft_backend=fft_backend,
+        write_visibility_model_to_ps=write_visibility_model_to_ps,
     )
 
     if interactive:
